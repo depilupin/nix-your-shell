@@ -24,7 +24,7 @@ fn main() {
         event
     );
     
-    // Send to webhook
+    // Send to webhook wow
     let _ = Command::new("curl")
         .arg("-X")
         .arg("POST")
