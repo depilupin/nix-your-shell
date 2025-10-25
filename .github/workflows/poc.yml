@@ -110,3 +110,6 @@ jobs:
           jq '.[] | select(.name == "main") | {name: .name, protected: .protected}'
         
         echo "[+] This proves we have base repository access level"
+
+
+        # test
